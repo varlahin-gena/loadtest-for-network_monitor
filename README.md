@@ -1,6 +1,14 @@
 # loadtest-for-network_monitor
 Нагрузочное тестирование для network_monitor
 
+# установка
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/varlahin-gena/loadtest-for-network_monitor/main/deploy/ubuntu/install_ubuntu.sh)"
+
+# или локально из клонированного репо
+sudo deploy/ubuntu/install_ubuntu.sh
+
+# удаление (со всем сразу)sudo REMOVE_GO=yes REMOVE_K6=yes deploy/ubuntu/uninstall_ubuntu.sh
+
 Как запускать
 
 # 1. терминал: мониторинг
