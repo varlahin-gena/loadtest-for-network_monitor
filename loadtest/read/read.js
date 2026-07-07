@@ -3,46 +3,47 @@ import { check, sleep } from 'k6';
 import { Trend } from 'k6/metrics';
 
 const BASE = __ENV.BASE || 'http://127.0.0.1:8080';
-const edgesLatency = new Trend('edges_latency', true);
+const evLatency = new Trend('events_latency', true);
 
 export const options = {
   scenarios: {
-    // "пользователи фронта", обновляющие карту
     dashboard_users: {
       executor: 'ramping-vus',
       startVUs: 1,
       stages: [
         { target: 5,  duration: '2m' },
-        { target: 20, duration: '3m' },
-        { target: 50, duration: '3m' },
+        { target: 15, duration: '3m' },
+        { target: 30, duration: '3m' },   // 30 одновременных "вкладок карты" — уже много для 4 vCPU
         { target: 0,  duration: '1m' },
       ],
     },
   },
   thresholds: {
-    'http_req_duration{endpoint:edges}': ['p(95)<1500', 'p(99)<3000'],
+    'http_req_duration{endpoint:events}': ['p(95)<2000', 'p(99)<4000'],
     'http_req_failed': ['rate<0.01'],
   },
 };
 
-// подгони параметры под реальные query params твоего aggregator API
-const windows = [1, 7, 30];               // days
-const filters = ['', 'blocked', 'allowed'];
-const limits  = [500, 2000, 5000];
+const days     = [1, 7, 30];
+const filters  = ['all', 'blocked', 'allowed'];
+const groupBys = ['ip', 'subnet', 'country'];
+const limits   = [500, 2000, 5000, 20000];  // 20000 = worst case (Go-агрегация + GC)
 
 export default function () {
-  const days   = windows[Math.floor(Math.random() * windows.length)];
-  const filter = filters[Math.floor(Math.random() * filters.length)];
-  const limit  = limits[Math.floor(Math.random() * limits.length)];
+  const p = new URLSearchParams({
+    days:            String(days[Math.floor(Math.random() * days.length)]),
+    limit:           String(limits[Math.floor(Math.random() * limits.length)]),
+    filter:          filters[Math.floor(Math.random() * filters.length)],
+    group_by:        groupBys[Math.floor(Math.random() * groupBys.length)],
+    include_unknown: Math.random() < 0.3 ? 'true' : 'false',
+  }).toString();
 
-  let q = `days=${days}&limit=${limit}`;
-  if (filter) q += `&filter=${filter}`;
+  const res = http.get(`${BASE}/api/events?${p}`, { tags: { endpoint: 'events' } });
+  evLatency.add(res.timings.duration);
+  check(res, {
+    'events 200': (r) => r.status === 200,
+    'has lines':  (r) => r.status === 200 && r.body.includes('"lines"'),
+  });
 
-  const edges = http.get(`${BASE}/api/edges?${q}`, { tags: { endpoint: 'edges' } });
-  edgesLatency.add(edges.timings.duration);
-  check(edges, { 'edges 200': (r) => r.status === 200 });
-
-  http.get(`${BASE}/api/stats?${q}`, { tags: { endpoint: 'stats' } });
-
-  sleep(Math.random() * 3 + 2); // пользователь смотрит на карту 2-5с
+  sleep(Math.random() * 3 + 2);
 }
