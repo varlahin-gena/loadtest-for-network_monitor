@@ -5,7 +5,8 @@ cd "$(dirname "$0")"
 # ВАЖНО: запускай с ОТДЕЛЬНОЙ машины. Подставь IP сервера:
 URL="${URL:-http://SERVER_IP:8080/api/ingest}"
 BASE="${BASE:-http://SERVER_IP:8080}"
-GEN="go run ./gen"
+GEN_BIN="$(cd "$(dirname "$0")/gen" && pwd)/loadgen"
+( cd "$(dirname "$0")/gen" && go build -o loadgen . ) || { echo "build failed"; exit 1; }GEN="$GEN_BIN"
 
 # batch=5000 => каждый HTTP-запрос = один INSERT ~5000 строк в CH (крупные парты, мало мержей)
 # workers=16 => сети хватает, backend не задыхается от параллелизма на 4 vCPU
