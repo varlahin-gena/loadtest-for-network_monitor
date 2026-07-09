@@ -1,28 +1,87 @@
 # loadtest-for-network_monitor
-Нагрузочное тестирование для network_monitor
+Нагрузочное тестирование для [network_monitor](https://github.com/varlahin-gena/network_monitor).
 
-# установка
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/varlahin-gena/loadtest-for-network_monitor/main/deploy/ubuntu/install_ubuntu.sh)"
+## Установка одной командой
 
-# или локально из клонированного репо
-sudo deploy/ubuntu/install_ubuntu.sh
+На чистом Ubuntu-сервере (от root):
 
-# удаление (со всем сразу)sudo REMOVE_GO=yes REMOVE_K6=yes deploy/ubuntu/uninstall_ubuntu.sh
+```bash
+curl -fsSL https://raw.githubusercontent.com/varlahin-gena/loadtest-for-network_monitor/main/install.sh | sudo bash
+```
 
-Как запускать
+С указанием адреса network_monitor:
 
-# 1. терминал: мониторинг
-cd loadtest && INTERVAL=5 CH_CONTAINER=clickhouse ./monitor/monitor.sh
+```bash
+curl -fsSL https://raw.githubusercontent.com/varlahin-gena/loadtest-for-network_monitor/main/install.sh | \
+  sudo bash -s -- --target-url http://10.0.0.5/api/ingest --target-base http://10.0.0.5 --with-docker
+```
 
-# 2. терминал: фазы по порядку
-cd loadtest  
-chmod +x run.sh monitor/monitor.sh  
-./run.sh A      # baseline — снять эталонные latency  
-./run.sh B      # ramp — найти предел записи (смотри active_parts, dropped, fail)  
-./run.sh C      # read-нагрузка (нужен k6)  
-./run.sh D      # смешанная, как в проде  
-./run.sh dirty  # проверка пути parse_errors  
-./run.sh syslog # проверка пути syslog-ng -> importer  
-./run.sh E      # stress до отказа  
-./run.sh F      # soak 6ч (утечки/диск/мержи)  
-./run.sh G      # spike  
+Установщик сам:
+- ставит Go, k6 и зависимости;
+- клонирует репозиторий в `/opt/loadtest-for-network_monitor`;
+- синхронизирует образцы событий из network_monitor;
+- собирает генератор нагрузки;
+- создаёт команды `loadtest-run`, `loadtest-monitor`, `loadtest-status`;
+- пишет конфиг в `/etc/default/loadtest-for-network_monitor`.
+
+Лог установки: `/var/log/loadtest-install.log`
+
+### Локально из клонированного репо
+
+```bash
+sudo ./install.sh
+# или с параметрами:
+sudo ./install.sh --target-url http://192.168.1.10/api/ingest --with-docker
+```
+
+### Удаление
+
+```bash
+sudo deploy/ubuntu/uninstall_ubuntu.sh --remove-k6
+# полная очистка включая Go:
+sudo REMOVE_GO=yes REMOVE_K6=yes deploy/ubuntu/uninstall_ubuntu.sh
+```
+
+## Запуск нагрузки
+
+После установки:
+
+```bash
+loadtest-status                  # проверить, что всё на месте
+loadtest-monitor                 # мониторинг ClickHouse (нужен Docker)
+loadtest-run B                   # фаза B — ramp ingest
+loadtest-run C                   # read-нагрузка (k6)
+```
+
+Или вручную (переопредели URL в `/etc/default/loadtest-for-network_monitor`):
+
+```bash
+cd /opt/loadtest-for-network_monitor/loadtest
+URL=http://SERVER_IP/api/ingest BASE=http://SERVER_IP ./run.sh B
+```
+
+## Фазы тестирования
+
+| Фаза | Описание |
+|------|----------|
+| `A` | baseline — эталонные latency |
+| `B` | ramp — предел записи |
+| `C` | read-нагрузка (/api/events), нужен k6 |
+| `D` | смешанная нагрузка |
+| `E` | stress до отказа |
+| `F` | soak 6ч |
+| `G` | spike |
+| `dirty` | путь parse_errors |
+| `syslog` | syslog-ng → importer (UDP) |
+
+## Переменные окружения установщика
+
+| Переменная | По умолчанию | Описание |
+|------------|--------------|----------|
+| `INSTALL_DIR` | `/opt/loadtest-for-network_monitor` | Каталог установки |
+| `TARGET_URL` | авто | URL ingest API |
+| `TARGET_BASE` | авто | Базовый URL для read |
+| `INSTALL_K6` | `yes` | Установить k6 |
+| `INSTALL_DOCKER` | `no` | Установить Docker |
+| `SKIP_SYNC` | `no` | Не синхронизировать samples |
+| `REPO_BRANCH` | `main` | Ветка репозитория |
