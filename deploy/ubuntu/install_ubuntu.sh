@@ -211,7 +211,7 @@ sync_samples() {
   if bash "$sync_script"; then
     log "samples синхронизированы"
   else
-    warn "sync-samples завершился с ошибкой — проверь сеть и репозиторий network_monitor"
+    warn "sync-samples завершился с ошибкой; продолжаю с тем samples.go, который уже лежит в репозитории"
   fi
 }
 sync_samples
