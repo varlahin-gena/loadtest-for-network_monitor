@@ -24,6 +24,8 @@ var (
 	kvDstRe  = regexp.MustCompile(`(?i)\bDstIP:\s*([\d.]+)`)
 	jsonSrc  = regexp.MustCompile(`"src_ip"\s*:\s*"([\d.]+)"`)
 	jsonDst  = regexp.MustCompile(`"dst_ip"\s*:\s*"([\d.]+)"`)
+	pySrc    = regexp.MustCompile(`'src_ip'\s*:\s*'([\d.]+)'`)
+	pyDst    = regexp.MustCompile(`'dst_ip'\s*:\s*'([\d.]+)'`)
 	// Cisco: from ZONE:IP ... to ZONE:IP (Built connection)
 	ciscoToRe = regexp.MustCompile(
 		`(?i)for\s+(?:outside|inside|dmz|lan|wan|trust|untrust)\s*:\s*([\d.]+)/\d+.*?\bto\s+(?:outside|inside|dmz|lan|wan|trust|untrust)\s*:\s*([\d.]+)/\d+`,
@@ -72,6 +74,16 @@ func extractSrcDstPair(line string) (src, dst string, ok bool) {
 	}
 	if m := jsonDst.FindStringSubmatch(line); len(m) > 1 {
 		dst = m[1]
+	}
+	if src == "" {
+		if m := pySrc.FindStringSubmatch(line); len(m) > 1 {
+			src = m[1]
+		}
+	}
+	if dst == "" {
+		if m := pyDst.FindStringSubmatch(line); len(m) > 1 {
+			dst = m[1]
+		}
 	}
 	if s, d, ok := try(src, dst); ok {
 		return s, d, true
