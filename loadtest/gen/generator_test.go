@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/netip"
 	"strings"
 	"testing"
 )
@@ -77,6 +78,28 @@ func TestExtraFixtures_ParseablePairs(t *testing.T) {
 		}
 		if src == dst {
 			t.Errorf("fixture %s: template src==dst %q", f.Vendor, src)
+		}
+	}
+}
+
+func TestGeoMode_ProducesPublicDistinctIPs(t *testing.T) {
+	g := newGen(7, 100, 10000, 1.2, 0, nil, testCorpus(t), "map")
+	for i := 0; i < 200; i++ {
+		line := g.event()
+		src, dst, ok := extractParsedPair(line)
+		if !ok {
+			continue
+		}
+		if src == dst {
+			t.Fatalf("geo mode produced identical src/dst: %s", src)
+		}
+		srcIP := netip.MustParseAddr(src)
+		dstIP := netip.MustParseAddr(dst)
+		if !srcIP.IsGlobalUnicast() || !dstIP.IsGlobalUnicast() {
+			t.Fatalf("geo mode produced non-global IPs: src=%s dst=%s", src, dst)
+		}
+		if srcIP.IsPrivate() || dstIP.IsPrivate() {
+			t.Fatalf("geo mode produced private IPs: src=%s dst=%s", src, dst)
 		}
 	}
 }

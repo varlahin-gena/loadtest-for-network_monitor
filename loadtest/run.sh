@@ -62,6 +62,11 @@ case "${1:-help}" in
     "$GEN" -url "$URL" -stages "2000:2m,35000:30s,2000:2m,35000:30s,2000:2m" \
       -start-rate 2000 -batch 2500 -workers 24
     ;;
+  map)
+    phase M "geo map demo"
+    "$GEN" -url "$URL" -geo-mode map -stages "2000:5m" -start-rate 1000 -batch 1000 -workers 16 \
+      -hot-ips 2000 -total-ips 2000000
+    ;;
   dirty)
     phase X "parse_errors path (30% мусора)"
     "$GEN" -url "$URL" -stages "8000:5m" -start-rate 8000 -batch 2500 -workers 16 -dirty-rate 0.3
@@ -76,6 +81,6 @@ case "${1:-help}" in
       -start-rate 5000 -batch 1 -workers 8
     ;;
   *)
-    echo "usage: URL=http://IP/api/ingest BASE=http://IP $0 {A|B|C|D|E|F|G|dirty|skipped|syslog}"
+    echo "usage: URL=http://IP/api/ingest BASE=http://IP $0 {A|B|C|D|E|F|G|map|dirty|skipped|syslog}"
     ;;
 esac

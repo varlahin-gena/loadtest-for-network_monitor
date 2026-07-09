@@ -51,6 +51,7 @@ loadtest-status                  # проверить, что всё на мес
 loadtest-monitor                 # мониторинг ClickHouse (нужен Docker)
 loadtest-run B                   # фаза B — ramp ingest
 loadtest-run C                   # read-нагрузка (k6)
+loadtest-run map                 # демонстрация карты с публичными GeoIP-адресами
 ```
 
 Или вручную (переопредели URL в `/etc/default/loadtest-for-network_monitor`):
@@ -71,6 +72,7 @@ URL=http://SERVER_IP/api/ingest BASE=http://SERVER_IP ./run.sh B
 | `E` | stress до отказа |
 | `F` | soak 6ч |
 | `G` | spike |
+| `map` | demo-режим для карты с публичными IP из разных регионов |
 | `dirty` | путь parse_errors |
 | `syslog` | syslog-ng → importer (UDP) |
 

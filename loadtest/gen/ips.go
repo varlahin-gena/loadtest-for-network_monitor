@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+type geoRoute struct {
+	srcPrefix string
+	dstPrefix string
+}
+
 // ipSide — роль адреса в строке лога (для реалистичной подстановки).
 type ipSide int
 
@@ -133,6 +138,9 @@ func classifySide(context string) ipSide {
 }
 
 func (g *gen) internalIP() string {
+	if g.geoMode == "map" {
+		return g.geoEndpoint(true)
+	}
 	idx := g.zipf.Uint64()
 	subnet := 1 + int(idx%250)
 	host := 1 + g.r.Intn(253)
@@ -140,6 +148,9 @@ func (g *gen) internalIP() string {
 }
 
 func (g *gen) externalIP() string {
+	if g.geoMode == "map" {
+		return g.geoEndpoint(false)
+	}
 	idx := g.zipf.Uint64()
 	if int(idx) < g.hotIPs {
 		return "203.0.113." + strconv.Itoa(int(idx)%254+1)
@@ -160,11 +171,17 @@ func (g *gen) externalIP() string {
 }
 
 func (g *gen) dmzIP() string {
+	if g.geoMode == "map" {
+		return g.geoEndpoint(true)
+	}
 	return "172.16." + strconv.Itoa(g.r.Intn(256)) + "." + strconv.Itoa(g.r.Intn(254)+1)
 }
 
 // makeTrafficPair возвращает пару src/dst: LAN↔WAN, гарантированно разные.
 func (g *gen) makeTrafficPair() (src, dst string) {
+	if g.geoMode == "map" {
+		return g.makeGeoPair()
+	}
 	if g.r.Float64() < 0.55 {
 		// исходящий: внутренняя сеть -> интернет
 		src, dst = g.internalIP(), g.externalIP()
@@ -225,6 +242,50 @@ func (g *gen) ipForSide(side ipSide, mapping map[string]string, used map[string]
 		}
 		return pick(g.externalIP())
 	}
+}
+
+func defaultGeoRoutes() []geoRoute {
+	return []geoRoute{
+		{srcPrefix: "8.8.8", dstPrefix: "1.1.1"},          // US -> global anycast
+		{srcPrefix: "31.13.71", dstPrefix: "91.108.56"},   // Meta EU -> Telegram-ish
+		{srcPrefix: "52.95.110", dstPrefix: "13.107.42"},  // AWS -> Microsoft
+		{srcPrefix: "104.16.132", dstPrefix: "172.217.20"}, // Cloudflare -> Google
+		{srcPrefix: "43.129.255", dstPrefix: "101.32.118"}, // Singapore/HK style
+		{srcPrefix: "81.2.69", dstPrefix: "185.60.216"},   // UK/EU
+		{srcPrefix: "23.38.97", dstPrefix: "210.140.92"},  // US CDN -> Japan
+		{srcPrefix: "170.114.52", dstPrefix: "34.117.59"}, // Zoom-ish -> GCP
+		{srcPrefix: "45.57.62", dstPrefix: "66.22.196"},   // CDN -> Fastly-ish
+		{srcPrefix: "103.21.244", dstPrefix: "116.203.0"}, // India-ish -> Germany-ish
+		{srcPrefix: "41.77.12", dstPrefix: "196.13.208"},  // Africa-ish
+		{srcPrefix: "95.100.96", dstPrefix: "203.205.254"}, // EU -> APAC-ish
+	}
+}
+
+func (g *gen) geoEndpoint(preferDst bool) string {
+	route := g.geoHotSet[g.r.Intn(len(g.geoHotSet))]
+	prefix := route.srcPrefix
+	if preferDst {
+		prefix = route.dstPrefix
+		if g.r.Float64() < 0.35 {
+			prefix = route.srcPrefix
+		}
+	} else if g.r.Float64() < 0.35 {
+		prefix = route.dstPrefix
+	}
+	return prefix + "." + strconv.Itoa(1+g.r.Intn(220))
+}
+
+func (g *gen) makeGeoPair() (src, dst string) {
+	route := g.geoHotSet[g.r.Intn(len(g.geoHotSet))]
+	src = route.srcPrefix + "." + strconv.Itoa(1+g.r.Intn(220))
+	dst = route.dstPrefix + "." + strconv.Itoa(1+g.r.Intn(220))
+	if g.r.Float64() < 0.35 {
+		src, dst = dst, src
+	}
+	if src == dst {
+		dst = route.dstPrefix + "." + strconv.Itoa(221+g.r.Intn(30))
+	}
+	return src, dst
 }
 
 func (g *gen) seedPair(mapping map[string]string, used map[string]bool, srcOld, dstOld string) {

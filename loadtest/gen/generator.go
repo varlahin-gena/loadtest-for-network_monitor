@@ -66,23 +66,35 @@ func loadCorpus(includeSkip bool) *corpus {
 // ---- event generator ----
 
 type gen struct {
-	r        *rand.Rand
-	zipf     *rand.Zipf
-	hotIPs   int
-	dirty    float64
-	mix      []weighted
-	mixTotal int
-	corpus   *corpus
+	r         *rand.Rand
+	zipf      *rand.Zipf
+	hotIPs    int
+	dirty     float64
+	mix       []weighted
+	mixTotal  int
+	corpus    *corpus
+	geoMode   string
+	geoHotSet []geoRoute
 }
 
-func newGen(seed int64, hot, total int, s, dirty float64, mix []weighted, c *corpus) *gen {
+func newGen(seed int64, hot, total int, s, dirty float64, mix []weighted, c *corpus, geoMode string) *gen {
 	r := rand.New(rand.NewSource(seed))
 	z := rand.NewZipf(r, s, 1.0, uint64(total-1))
 	mt := 0
 	if len(mix) > 0 {
 		mt = mix[len(mix)-1].cum
 	}
-	return &gen{r: r, zipf: z, hotIPs: hot, dirty: dirty, mix: mix, mixTotal: mt, corpus: c}
+	return &gen{
+		r:         r,
+		zipf:      z,
+		hotIPs:    hot,
+		dirty:     dirty,
+		mix:       mix,
+		mixTotal:  mt,
+		corpus:    c,
+		geoMode:   geoMode,
+		geoHotSet: defaultGeoRoutes(),
+	}
 }
 
 func (g *gen) pickVendor() string {

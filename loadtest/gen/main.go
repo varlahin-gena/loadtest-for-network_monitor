@@ -36,6 +36,7 @@ var (
 	fHotIPs      = flag.Int("hot-ips", 50, "count of 'hot' src/dst IPs (Zipf head)")
 	fTotalIPs    = flag.Int("total-ips", 200000, "IP address space for Zipf substitution")
 	fZipfS       = flag.Float64("zipf-s", 1.2, "Zipf skew (>1). Higher = more concentrated")
+	fGeoMode     = flag.String("geo-mode", "lab", "lab | map (map = real-looking public IPs for GeoIP/map demos)")
 	fDirty       = flag.Float64("dirty-rate", 0.0, "fraction [0..1] of malformed events (tests parse_errors path)")
 	fIncludeSkip = flag.Bool("include-skip", false, "include Skip:true samples (tests parser Skipped path)")
 	fReport      = flag.Duration("report", 5*time.Second, "metrics report interval")
@@ -150,8 +151,8 @@ func main() {
 	if len(cor.vendors) == 0 {
 		log.Fatal("corpus is empty — запусти scripts/sync-samples.sh (go generate ./gen/...)")
 	}
-	log.Printf("scenario: mode=%s stages=%s total=%s workers=%d batch=%d dirty=%.2f include-skip=%v vendors=%v",
-		*fMode, *fStages, total, *fWorkers, *fBatch, *fDirty, *fIncludeSkip, cor.vendors)
+	log.Printf("scenario: mode=%s geo=%s stages=%s total=%s workers=%d batch=%d dirty=%.2f include-skip=%v vendors=%v",
+		*fMode, *fGeoMode, *fStages, total, *fWorkers, *fBatch, *fDirty, *fIncludeSkip, cor.vendors)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sig := make(chan os.Signal, 1)
@@ -228,7 +229,7 @@ func worker(ctx context.Context, id int, jobs <-chan struct{}, wg *sync.WaitGrou
 	client *http.Client, udp net.Conn, mix []weighted, cor *corpus) {
 	defer wg.Done()
 
-	g := newGen(int64(id)*7919+1, *fHotIPs, *fTotalIPs, *fZipfS, *fDirty, mix, cor)
+		g := newGen(int64(id)*7919+1, *fHotIPs, *fTotalIPs, *fZipfS, *fDirty, mix, cor, *fGeoMode)
 	buf := &bytes.Buffer{}
 
 	for range jobs {
