@@ -6,9 +6,19 @@ cd "$(dirname "$0")"
 URL="${URL:-http://127.0.0.1/api/ingest}"
 BASE="${BASE:-http://127.0.0.1}"
 
-# Собираем генератор один раз (модуль go.mod лежит в gen/)
 GEN_BIN="$(pwd)/gen/loadgen"
-( cd gen && go build -o loadgen . )
+
+# Предпочитаем уже собранный бинарник из install.sh.
+# Если его нет, пробуем собрать на месте, даже в non-login shell.
+if [ ! -x "$GEN_BIN" ]; then
+  export PATH="$PATH:/usr/local/go/bin"
+  if ! command -v go >/dev/null 2>&1; then
+    echo "loadgen не найден и Go недоступен в PATH; переустанови стенд через ./install.sh" >&2
+    exit 1
+  fi
+  ( cd gen && go build -o loadgen . )
+fi
+
 GEN="$GEN_BIN"
 
 phase() {
