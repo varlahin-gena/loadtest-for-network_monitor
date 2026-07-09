@@ -43,7 +43,7 @@ type corpus struct {
 	vendors  []string
 }
 
-// loadCorpus берёт строки из синхронизированного samplesrc.
+// loadCorpus берёт строки из синхронизированного samplesrc + локальные fixtures.
 // Skip:true (напр. cowrie.command.input без сетевой пары) по умолчанию исключаем —
 // они тестируют путь "Skipped", а не путь вставки.
 func loadCorpus(includeSkip bool) *corpus {
@@ -53,6 +53,9 @@ func loadCorpus(includeSkip bool) *corpus {
 			continue
 		}
 		c.byVendor[s.Vendor] = append(c.byVendor[s.Vendor], s.Line)
+	}
+	for _, f := range extraFixtures {
+		c.byVendor[f.Vendor] = append(c.byVendor[f.Vendor], f.Line)
 	}
 	for v := range c.byVendor {
 		c.vendors = append(c.vendors, v)
@@ -82,19 +85,6 @@ func newGen(seed int64, hot, total int, s, dirty float64, mix []weighted, c *cor
 	return &gen{r: r, zipf: z, hotIPs: hot, dirty: dirty, mix: mix, mixTotal: mt, corpus: c}
 }
 
-// ip: Zipf по адресному пространству; первые hotIPs — "горячие" публичные адреса.
-func (g *gen) ip() string {
-	idx := g.zipf.Uint64()
-	if int(idx) < g.hotIPs {
-		return "203.0.113." + strconv.Itoa(int(idx)%254+1)
-	}
-	a := 10 + int(idx>>16)%200
-	b := int(idx>>8) & 0xFF
-	cc := int(idx) & 0xFF
-	return strconv.Itoa(a) + "." + strconv.Itoa(b) + "." + strconv.Itoa(cc) + "." +
-		strconv.Itoa(g.r.Intn(254)+1)
-}
-
 func (g *gen) pickVendor() string {
 	n := g.r.Intn(g.mixTotal)
 	for _, w := range g.mix {
@@ -116,18 +106,50 @@ func (g *gen) pickLine() string {
 	return lines[g.r.Intn(len(lines))]
 }
 
-// substituteIPs заменяет все IPv4 в шаблоне на сгенерированные (Zipf).
-// Консистентно: одинаковый исходный IP -> одинаковый новый (важно для строк
-// вида "203.0.113.5/443 (203.0.113.5/443)").
+// substituteIPs заменяет IPv4 в шаблоне на реалистичные адреса:
+//   - src/dst из разных пулов (LAN vs WAN), никогда не совпадают в паре;
+//   - одинаковый исходный IP в строке -> один новый (Cisco "IP/port (IP/port)");
+//   - контекст (inside/outside, src=, dst=) задаёт роль адреса.
 func (g *gen) substituteIPs(line string) string {
-	seen := make(map[string]string, 4)
+	mapping := make(map[string]string, 8)
+	used := make(map[string]bool, 8)
+
+	if srcOld, dstOld, ok := extractSrcDstPair(line); ok {
+		g.seedPair(mapping, used, srcOld, dstOld)
+	}
+
+	for _, idx := range ipRe.FindAllStringIndex(line, -1) {
+		old := line[idx[0]:idx[1]]
+		if _, exists := mapping[old]; exists {
+			continue
+		}
+		ctxStart := idx[0] - 56
+		if ctxStart < 0 {
+			ctxStart = 0
+		}
+		side := classifySide(line[ctxStart:idx[0]])
+		mapping[old] = g.ipForSide(side, mapping, used)
+		used[mapping[old]] = true
+	}
+
+	// Финальная проверка: если в паре src/dst всё же совпали — развести dst.
+	if srcOld, dstOld, ok := extractSrcDstPair(line); ok {
+		if mapping[srcOld] != "" && mapping[srcOld] == mapping[dstOld] {
+			for i := 0; i < 32; i++ {
+				candidate := g.ipForSide(sideDst, mapping, used)
+				if candidate != mapping[srcOld] {
+					mapping[dstOld] = candidate
+					break
+				}
+			}
+		}
+	}
+
 	return ipRe.ReplaceAllStringFunc(line, func(old string) string {
-		if nv, ok := seen[old]; ok {
+		if nv, ok := mapping[old]; ok {
 			return nv
 		}
-		nv := g.ip()
-		seen[old] = nv
-		return nv
+		return old
 	})
 }
 
