@@ -133,27 +133,8 @@ EOF
 install_go
 ensure_path_go
 
-# ---- k6 ----
-install_k6_pkg() {
-  if [ "$INSTALL_K6" != yes ]; then
-    warn "пропускаю k6 (фазы C/D недоступны)"
-    return
-  fi
-  if command -v k6 >/dev/null 2>&1; then
-    log "k6 уже установлен: $(k6 version 2>/dev/null | head -1)"
-    return
-  fi
-
-  log "устанавливаю k6"
-  mkdir -p /usr/share/keyrings
-  retry 3 5 curl -fsSL https://dl.k6.io/key.gpg | gpg --dearmor -o /usr/share/keyrings/k6-archive-keyring.gpg
-  echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
-    > /etc/apt/sources.list.d/k6.list
-  apt-get update -y
-  apt-get install -y k6
-  log "k6: $(k6 version 2>/dev/null | head -1)"
-}
-install_k6_pkg
+# ---- k6 (необязательно: сбой не останавливает установку) ----
+install_k6 "$INSTALL_K6"
 
 # ---- Docker (опционально, для monitor.sh) ----
 install_docker_cli() {
@@ -345,7 +326,7 @@ install_dir=$INSTALL_DIR
 repo_url=$REPO_URL
 repo_branch=$REPO_BRANCH
 go_version=$(go version 2>/dev/null || echo unknown)
-k6_installed=$([ "$INSTALL_K6" = yes ] && echo yes || echo no)
+k6_installed=$(command -v k6 >/dev/null && echo yes || echo no)
 docker_installed=$([ "$INSTALL_DOCKER" = yes ] && echo yes || echo no)
 os=${OS_ID} ${OS_VERSION}
 arch=$ARCH
@@ -377,6 +358,10 @@ verify_install
 
 # ---- итог ----
 PRIMARY_IP="$(detect_primary_ip)"
+K6_STATUS="установлен"
+if ! command -v k6 >/dev/null 2>&1; then
+  K6_STATUS="не установлен (фазы C/D недоступны; остальное работает)"
+fi
 cat <<EOF
 
 $(log "установка завершена")
@@ -385,6 +370,7 @@ $(log "установка завершена")
 Конфиг:      /etc/default/loadtest-for-network_monitor
 Лог:         $LOG_FILE
 Статус:      loadtest-status
+k6:          $K6_STATUS
 
 Цель по умолчанию (отредактируй /etc/default/loadtest-for-network_monitor):
   TARGET_URL=$TARGET_URL

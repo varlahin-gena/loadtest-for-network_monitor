@@ -81,7 +81,8 @@ URL=http://SERVER_IP/api/ingest BASE=http://SERVER_IP ./run.sh B
 | `INSTALL_DIR` | `/opt/loadtest-for-network_monitor` | Каталог установки |
 | `TARGET_URL` | авто | URL ingest API |
 | `TARGET_BASE` | авто | Базовый URL для read |
-| `INSTALL_K6` | `yes` | Установить k6 |
+| `INSTALL_K6` | `yes` | Установить k6 (при сбое CDN — fallback с GitHub) |
+| `K6_VERSION` | `2.0.0` | Версия k6 для установки с GitHub |
 | `INSTALL_DOCKER` | `no` | Установить Docker |
 | `SKIP_SYNC` | `no` | Не синхронизировать samples |
 | `REPO_BRANCH` | `main` | Ветка репозитория |
