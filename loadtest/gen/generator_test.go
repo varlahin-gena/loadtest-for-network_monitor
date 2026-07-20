@@ -17,7 +17,7 @@ func testCorpus(t *testing.T) *corpus {
 
 func TestSubstituteIPs_SrcNotEqualDst(t *testing.T) {
 	c := testCorpus(t)
-	g := newGen(42, 50, 200000, 1.2, 0, nil, c)
+	g := newGen(42, 50, 200000, 1.2, 0, nil, c, "lab")
 
 	for i := 0; i < 500; i++ {
 		line := g.substituteIPs(g.pickLine())
@@ -32,7 +32,7 @@ func TestSubstituteIPs_SrcNotEqualDst(t *testing.T) {
 }
 
 func TestSubstituteIPs_CiscoRepeatSameIP(t *testing.T) {
-	g := newGen(1, 50, 200000, 1.2, 0, nil, testCorpus(t))
+	g := newGen(1, 50, 200000, 1.2, 0, nil, testCorpus(t), "lab")
 	template := `%ASA-6-302013: Built outbound TCP connection 1 for outside:203.0.113.5/443 (203.0.113.5/443) to inside:10.0.0.10/51000 (10.0.0.10/51000)`
 	out := g.substituteIPs(template)
 
@@ -51,7 +51,7 @@ func TestSubstituteIPs_CiscoRepeatSameIP(t *testing.T) {
 }
 
 func TestSubstituteIPs_InternalExternalMix(t *testing.T) {
-	g := newGen(99, 50, 200000, 1.2, 0, nil, testCorpus(t))
+	g := newGen(99, 50, 200000, 1.2, 0, nil, testCorpus(t), "lab")
 	template := `CEF:0|Fortinet|FortiGate|7.2|00013|traffic|5|src=192.0.2.10 dst=203.0.113.20 spt=51000 dpt=80 proto=6 act=accept`
 	out := g.substituteIPs(template)
 	src, dst, ok := extractParsedPair(out)
