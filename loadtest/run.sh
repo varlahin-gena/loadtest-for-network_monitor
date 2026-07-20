@@ -75,12 +75,19 @@ case "${1:-help}" in
     phase X "Skipped path (include Skip:true)"
     "$GEN" -url "$URL" -stages "8000:5m" -start-rate 8000 -batch 2500 -workers 16 -include-skip
     ;;
-  syslog)
+  syslog|syslog-udp)
     phase X "syslog-ng -> importer (UDP)"
     "$GEN" -mode udp -syslog "${SYSLOG:-127.0.0.1:514}" -stages "5000:5m" \
       -start-rate 5000 -batch 1 -workers 8
     ;;
+  syslog-tcp)
+    phase X "syslog-ng -> importer (TCP)"
+    "$GEN" -mode tcp -syslog "${SYSLOG:-127.0.0.1:514}" -stages "5000:5m" \
+      -start-rate 5000 -batch 100 -workers 8
+    ;;
   *)
-    echo "usage: URL=http://IP/api/ingest BASE=http://IP $0 {A|B|C|D|E|F|G|map|dirty|skipped|syslog}"
+    echo "usage: URL=http://IP/api/ingest BASE=http://IP $0 {A|B|C|D|E|F|G|map|dirty|skipped|syslog|syslog-tcp}"
+    echo "  syslog / syslog-udp  UDP 514 (SYSLOG=host:port)"
+    echo "  syslog-tcp           TCP 514 (SYSLOG=host:port), newline-delimited"
     ;;
 esac

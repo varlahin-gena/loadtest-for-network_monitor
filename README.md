@@ -52,6 +52,7 @@ loadtest-monitor                 # мониторинг ClickHouse (нужен D
 loadtest-run B                   # фаза B — ramp ingest
 loadtest-run C                   # read-нагрузка (k6)
 loadtest-run map                 # демонстрация карты с публичными GeoIP-адресами
+loadtest-run syslog-tcp          # syslog по TCP (SYSLOG=host:port)
 ```
 
 Или вручную (переопредели URL в `/etc/default/loadtest-for-network_monitor`):
@@ -59,6 +60,7 @@ loadtest-run map                 # демонстрация карты с пуб
 ```bash
 cd /opt/loadtest-for-network_monitor/loadtest
 URL=http://SERVER_IP/api/ingest BASE=http://SERVER_IP ./run.sh B
+SYSLOG=10.0.0.5:514 ./run.sh syslog-tcp
 ```
 
 ## Фазы тестирования
@@ -74,7 +76,8 @@ URL=http://SERVER_IP/api/ingest BASE=http://SERVER_IP ./run.sh B
 | `G` | spike |
 | `map` | demo-режим для карты с публичными IP из разных регионов |
 | `dirty` | путь parse_errors |
-| `syslog` | syslog-ng → importer (UDP) |
+| `syslog` / `syslog-udp` | syslog-ng → importer (UDP) |
+| `syslog-tcp` | syslog-ng → importer (TCP, newline-delimited) |
 
 ## Переменные окружения установщика
 

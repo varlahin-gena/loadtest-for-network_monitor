@@ -5,41 +5,77 @@ package samplesrc
 
 // Sample — пример строки лога для тестов и страницы parser-test.
 type Sample struct {
-	Vendor string
-	Desc   string
-	Line   string
-	Skip   bool
+	Vendor string // ожидаемый вендор-парсер
+	Desc   string // краткое описание
+	Line   string // сама строка
+	Skip   bool   // true, если строка должна быть осознанно пропущена (ShouldSkip)
 }
 
+// sampleCorpus — единый источник примеров: используется в parser_test.go
+// и эндпоинтом /api/parse-samples.
+//
+// Строки ниже взяты/собраны по официальным примерам вендоров (сетевые события
+// с парой src/dst IP). При правке регэкспов сверяйтесь с этим корпусом.
 var sampleCorpus = []Sample{
-	{Vendor: "usergate", Desc: "CEF traffic allow",
-		Line: `CEF:0|UserGate|UGOS|7.1.0|100|Traffic|3|src=203.0.113.5 dst=198.51.100.7 spt=40000 dpt=443 act=allow proto=TCP rt=1700000000 cs1=AllowWeb cs2=trust cs3=RU cs4=untrust cs5=US out=1500 in=3000 cn1=12 cn2=24`},
-	{Vendor: "fortigate", Desc: "CEF traffic accept",
-		Line: `CEF:0|Fortinet|FortiGate|7.2|00013|traffic|5|src=192.0.2.10 dst=203.0.113.20 spt=51000 dpt=80 proto=6 act=accept app=HTTP FTNTFGTpolicyid=7 FTNTFGTsrcintfrole=lan FTNTFGTdstintfrole=wan FTNTFGTsrccountry=Russia FTNTFGTdstcountry=United States out=500 in=1500 FTNTFGTsentpkt=5 FTNTFGTrcvdpkt=8 FTNTFGTeventtime=1700000000`},
-	{Vendor: "cisco-asa", Desc: "302013 Built TCP",
-		Line: `%ASA-6-302013: Built outbound TCP connection 12345 for outside:203.0.113.5/443 (203.0.113.5/443) to inside:10.0.0.10/51000 (10.0.0.10/51000)`},
+	// docs.usergate.com — журнал трафика CEF (Vendor=Usergate, Product=UTM)
+	{Vendor: "usergate", Desc: "CEF traffic accept (docs)",
+		Line: `CEF:0|Usergate|UTM|6|traffic|firewall|1|rt=1652344423822 deviceExternalId=utmcore@ersthetatica suser=user_example act=accept cs1Label=Rule cs1=Allow trusted to untrusted src=10.10.10.10 spt=54321 cs2Label=Source Zone cs2=Trusted cs3Label=Source Country cs3=RU proto=TCP dst=194.226.127.130 dpt=443 cs4Label=Destination Zone cs4=Untrusted cs5Label=Destination Country cs5=US in=231 out=40 cn1Label=Packets sent cn1=3 cn2Label=Packets received cn2=1`},
+
+	// docs.fortinet.com — Traffic log support for CEF (FortiOS Log Message Reference)
+	{Vendor: "fortigate", Desc: "CEF traffic:forward close (docs)",
+		Line: `Dec 27 11:07:55 FGT-A-LOG CEF: 0|Fortinet|Fortigate|v6.0.3|00013|traffic:forward close|3|deviceExternalId=FGT5HD3915800610 FTNTFGTlogid=0000000013 cat=traffic:forward FTNTFGTsubtype=forward FTNTFGTlevel=notice FTNTFGTvd=vdom1 FTNTFGTeventtime=1545937675 src=10.1.100.11 spt=54190 deviceInboundInterface=port12 FTNTFGTsrcintfrole=undefined dst=52.53.140.235 dpt=443 deviceOutboundInterface=port11 FTNTFGTdstintfrole=undefined FTNTFGTpoluuid=c2d460aa-fe6f-51e8-9505-41b5117dfdd4 externalId=402 proto=6 act=close FTNTFGTpolicyid=1 FTNTFGTpolicytype=policy app=HTTPS FTNTFGTdstcountry=United States FTNTFGTsrccountry=Reserved FTNTFGTtrandisp=snat sourceTranslatedAddress=172.16.200.1 sourceTranslatedPort=54190 FTNTFGTappid=40568 FTNTFGTapp=HTTPS.BROWSER FTNTFGTappcat=Web.Client FTNTFGTapprisk=medium FTNTFGTapplist=g-default FTNTFGTduration=2 out=3652 in=146668 FTNTFGTsentpkt=58 FTNTFGTrcvdpkt=105 FTNTFGTutmaction=allow FTNTFGTcountapp=2`},
+	{Vendor: "fortigate", Desc: "CEF traffic:forward accept DNS (docs)",
+		Line: `Dec 27 11:12:30 FGT-A-LOG CEF: 0|Fortinet|Fortigate|v6.0.3|00013|traffic:forward accept|3|deviceExternalId=FGT5HD3915800610 FTNTFGTlogid=0000000013 cat=traffic:forward FTNTFGTsubtype=forward FTNTFGTlevel=notice FTNTFGTvd=vdom1 FTNTFGTeventtime=1545937950 src=10.1.100.11 spt=58843 deviceInboundInterface=port12 FTNTFGTsrcintfrole=undefined dst=172.16.200.55 dpt=53 deviceOutboundInterface=port11 FTNTFGTdstintfrole=undefined externalId=440 proto=17 act=accept FTNTFGTpolicyid=1 FTNTFGTpolicytype=policy app=DNS FTNTFGTdstcountry=Reserved FTNTFGTsrccountry=Reserved out=70 in=528 FTNTFGTsentpkt=1 FTNTFGTrcvdpkt=1`},
+
+	// Cisco doc 116149 — outbound: инициатор на стороне after "to"
+	{Vendor: "cisco-asa", Desc: "302013 Built outbound TCP (Cisco FAQ)",
+		Line: `%ASA-6-302013: Built outbound TCP connection 9 for outside:10.1.2.1/22 (10.1.2.1/22) to inside:10.1.1.2/53496 (10.1.1.2/53496)`},
+	{Vendor: "cisco-asa", Desc: "302013 Built inbound TCP (Cisco FAQ)",
+		Line: `%ASA-6-302013: Built inbound TCP connection 11 for outside:10.1.2.1/21647 (10.1.2.1/21647) to inside:10.1.1.2/22 (10.1.1.2/22)`},
+	{Vendor: "cisco-asa", Desc: "302014 Teardown TCP (Cisco FAQ)",
+		Line: `%ASA-6-302014: Teardown TCP connection 9 for outside:10.1.2.1/22 to inside:10.1.1.2/53496 duration 0:00:30 bytes 2436 TCP FINs`},
 	{Vendor: "cisco-asa", Desc: "302020 Built ICMP",
 		Line: `%ASA-6-302020: Built inbound ICMP connection for faddr 203.0.113.9/0 gaddr 10.0.0.1/0 laddr 10.0.0.5/0`},
-	{Vendor: "cisco-asa", Desc: "106023 deny by access-group",
-		Line: `%ASA-4-106023: deny tcp src outside:203.0.113.50/44321 dst inside:10.0.0.80/22 by access-group "OUTSIDE_IN" [0x0, 0x0]`},
-	{Vendor: "cisco-asa", Desc: "106100 acl permitted",
-		Line: `%ASA-6-106100: access-list acl_in permitted tcp inside/10.0.0.10(45000) -> outside/198.51.100.5(80) hit-cnt 1 first hit [0x0, 0x0]`},
+	// jasonmurray.org / Cisco ACL logging guide
+	{Vendor: "cisco-asa", Desc: "106023 Deny by access-group",
+		Line: `%ASA-4-106023: Deny tcp src outside:192.168.0.50/21979 dst inside:192.168.0.49/23 by access-group "acl_outside" [0x0, 0x0]`},
+	{Vendor: "cisco-asa", Desc: "106100 acl permitted (Cisco docs)",
+		Line: `%ASA-6-106100: access-list outside-acl permitted tcp outside/1.1.1.1(12345) -> inside/192.168.1.1(1357) hit-cnt 1 (first hit)`},
 	{Vendor: "cisco-asa", Desc: "106015 Deny TCP",
 		Line: `%ASA-6-106015: Deny TCP (no connection) from 203.0.113.77/31337 to 10.0.0.9/443 flags SYN ACK on interface outside`},
 	{Vendor: "cisco-asa", Desc: "106001 Inbound denied",
 		Line: `%ASA-2-106001: Inbound TCP connection denied from 203.0.113.66/12345 to 10.0.0.7/80 flags SYN on interface outside`},
+
 	{Vendor: "cisco-ftd", Desc: "313009 Denied ICMP",
 		Line: `%FTD-4-313009: Denied ICMP type=8, for inside:10.0.0.5/0 (10.0.0.5/0) to outside:203.0.113.5/0`},
-	{Vendor: "cisco-ftd", Desc: "430002 connection",
-		Line: `%FTD-1-430002: EventPriority: Low, DeviceUUID: abc-123, FirstPacketSecond: 2023-11-14T22:13:20Z, ConnectionID: 42, SrcIP: 198.51.100.10, DstIP: 203.0.113.30, SrcPort: 50000, DstPort: 443, Protocol: tcp, IngressZone: inside, EgressZone: outside, AccessControlRuleAction: Allow, AccessControlRuleName: WebRule, InitiatorBytes: 1200, ResponderBytes: 3400, InitiatorPackets: 10, ResponderPackets: 12`},
+	// Cisco SFIMS / FTD security event syslog (430002)
+	{Vendor: "cisco-ftd", Desc: "430002 connection start (Cisco docs)",
+		Line: `%FTD-1-430002: EventPriority: Low, DeviceUUID: b2433c5c-a6a1-11eb-a6e7-be0b9833091f, InstanceID: 2, FirstPacketSecond: 2021-04-30T11:31:19Z, ConnectionID: 4, AccessControlRuleAction: Allow, SrcIP: 172.16.10.10, DstIP: 172.16.20.10, ICMPType: Echo Request, ICMPCode: No Code, Protocol: icmp, IngressInterface: inside, EgressInterface: outside, ACPolicy: Default Allow All Traffic, AccessControlRuleName: test, Client: ICMP client, ApplicationProtocol: ICMP, InitiatorPackets: 1, ResponderPackets: 0, InitiatorBytes: 74, ResponderBytes: 0, NAPPolicy: Balanced Security and Connectivity`},
+	// Rapid7 InsightIDR — 430003 без EventPriority
+	{Vendor: "cisco-ftd", Desc: "430003 connection end (Rapid7)",
+		Line: `%FTD-6-430003: AccessControlRuleAction: Allow, SrcIP: 10.101.11.21, DstIP: 10.178.219.10, SrcPort: 46915, DstPort: 391, Protocol: udp, IngressZone: Inside, EgressZone: R7_Outside, ACPolicy: Access_Control, AccessControlRuleName: Allow_All_Outbound, Prefilter Policy: Prefilter, User: Unknown, Client: CLDAP client, ApplicationProtocol: CLDAP, ConnectionDuration: 0, InitiatorPackets: 1, ResponderPackets: 0, InitiatorBytes: 131, ResponderBytes: 0, NAPPolicy: Unknown`},
+
 	{Vendor: "cowrie", Desc: "session.connect (JSON)",
 		Line: `{"eventid":"cowrie.session.connect","src_ip":"203.0.113.200","dst_ip":"10.0.0.50","src_port":54321,"dst_port":22,"protocol":"ssh","sensor":"honeypot1","timestamp":"2023-11-14T22:13:20.123456Z"}`},
 	{Vendor: "cowrie", Desc: "login.failed (python-repr)",
 		Line: `Jun 30 18:50:43 172.18.0.1 {'eventid': 'cowrie.login.failed', 'src_ip': '203.0.113.201', 'dst_ip': '10.0.0.51', 'src_port': 40000, 'dst_port': 22, 'protocol': 'telnet', 'sensor': 'hp2', 'username': 'root'}`},
 	{Vendor: "cowrie", Desc: "command.input (пропуск: нет сетевой пары)", Skip: true,
 		Line: `{"eventid":"cowrie.command.input","src_ip":"203.0.113.202","input":"ls -la"}`},
+	{Vendor: "cowrie", Desc: "direct-tcpip.request (пропуск: dst — цель прокси)", Skip: true,
+		Line: `{"eventid":"cowrie.direct-tcpip.request","dst_ip":"77.88.21.158","dst_port":25,"src_ip":"203.0.113.200","src_port":19453,"protocol":"ssh","sensor":"hp1","timestamp":"2026-07-19T00:00:35.207887Z"}`},
+
 	{Vendor: "generic", Desc: "generic key=value",
 		Line: `src=192.0.2.55 dst=198.51.100.66 spt=12345 dpt=8080 act=deny proto=udp rule=BlockRule out=100 in=200 cn1=2 cn2=3`},
 }
 
+// Samples возвращает весь корпус примеров.
 func Samples() []Sample { return sampleCorpus }
+
+// SamplesByVendor группирует примеры по вендору (для /api/parse-samples).
+func SamplesByVendor() map[string][]string {
+	out := make(map[string][]string)
+	for _, s := range sampleCorpus {
+		out[s.Vendor] = append(out[s.Vendor], s.Line)
+	}
+	return out
+}

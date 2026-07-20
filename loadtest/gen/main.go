@@ -24,13 +24,13 @@ import (
 // ---- CLI ----
 
 var (
-	fMode        = flag.String("mode", "http", "http | udp (udp = raw syslog to syslog-ng)")
+	fMode        = flag.String("mode", "http", "http | udp | tcp (udp/tcp = raw syslog to syslog-ng)")
 	fURL         = flag.String("url", "http://127.0.0.1:8080/api/ingest", "ingest endpoint (http mode)")
-	fSyslog      = flag.String("syslog", "127.0.0.1:514", "syslog udp addr (udp mode)")
+	fSyslog      = flag.String("syslog", "127.0.0.1:514", "syslog addr host:port (udp/tcp modes)")
 	fCType       = flag.String("content-type", "text/plain", "Content-Type for http mode")
 	fStages      = flag.String("stages", "5000:2m,10000:3m,25000:3m,50000:3m", "EPS ramp stages: target:dur,target:dur")
 	fStartRate   = flag.Float64("start-rate", 500, "initial EPS before first stage")
-	fWorkers     = flag.Int("workers", 16, "HTTP sender goroutines (4 vCPU -> держи 8-24)")
+	fWorkers     = flag.Int("workers", 16, "sender goroutines (4 vCPU -> держи 8-24)")
 	fBatch       = flag.Int("batch", 5000, "events per request (newline-joined) = размер INSERT-батча в CH")
 	fMix         = flag.String("mix", "fortigate=40,usergate=20,cisco-asa=15,cisco-ftd=10,cowrie=10,generic=5", "vendor weights")
 	fHotIPs      = flag.Int("hot-ips", 50, "count of 'hot' src/dst IPs (Zipf head)")
@@ -40,7 +40,7 @@ var (
 	fDirty       = flag.Float64("dirty-rate", 0.0, "fraction [0..1] of malformed events (tests parse_errors path)")
 	fIncludeSkip = flag.Bool("include-skip", false, "include Skip:true samples (tests parser Skipped path)")
 	fReport      = flag.Duration("report", 5*time.Second, "metrics report interval")
-	fTimeout     = flag.Duration("timeout", 10*time.Second, "http request timeout")
+	fTimeout     = flag.Duration("timeout", 10*time.Second, "http/tcp dial+write timeout")
 )
 
 // ---- rate stages ----
@@ -144,6 +144,11 @@ var (
 
 func main() {
 	flag.Parse()
+	switch *fMode {
+	case "http", "udp", "tcp":
+	default:
+		log.Fatalf("bad mode %q (want http|udp|tcp)", *fMode)
+	}
 	stages, total := parseStages(*fStages)
 
 	mix := parseMix(*fMix)
@@ -151,8 +156,13 @@ func main() {
 	if len(cor.vendors) == 0 {
 		log.Fatal("corpus is empty — запусти scripts/sync-samples.sh (go generate ./gen/...)")
 	}
-	log.Printf("scenario: mode=%s geo=%s stages=%s total=%s workers=%d batch=%d dirty=%.2f include-skip=%v vendors=%v",
-		*fMode, *fGeoMode, *fStages, total, *fWorkers, *fBatch, *fDirty, *fIncludeSkip, cor.vendors)
+	if *fMode == "http" {
+		log.Printf("scenario: mode=%s geo=%s stages=%s total=%s workers=%d batch=%d dirty=%.2f include-skip=%v vendors=%v",
+			*fMode, *fGeoMode, *fStages, total, *fWorkers, *fBatch, *fDirty, *fIncludeSkip, cor.vendors)
+	} else {
+		log.Printf("scenario: mode=%s syslog=%s geo=%s stages=%s total=%s workers=%d batch=%d dirty=%.2f include-skip=%v vendors=%v",
+			*fMode, *fSyslog, *fGeoMode, *fStages, total, *fWorkers, *fBatch, *fDirty, *fIncludeSkip, cor.vendors)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sig := make(chan os.Signal, 1)
@@ -170,6 +180,7 @@ func main() {
 		},
 	}
 
+	// UDP: один shared conn (datagram). TCP: каждый worker держит свой persistent conn.
 	var udpConn net.Conn
 	if *fMode == "udp" {
 		c, err := net.Dial("udp", *fSyslog)
@@ -177,6 +188,15 @@ func main() {
 			log.Fatalf("udp dial: %v", err)
 		}
 		udpConn = c
+		defer udpConn.Close()
+	}
+	if *fMode == "tcp" {
+		// ранний fail, если на приёмнике нет TCP-листенера
+		c, err := net.DialTimeout("tcp", *fSyslog, *fTimeout)
+		if err != nil {
+			log.Fatalf("tcp dial %s: %v (проверь, что syslog-ng слушает TCP)", *fSyslog, err)
+		}
+		_ = c.Close()
 	}
 
 	var wg sync.WaitGroup
@@ -225,12 +245,65 @@ loop:
 	finalReport(time.Since(start))
 }
 
+func dialSyslogTCP() (net.Conn, error) {
+	c, err := net.DialTimeout("tcp", *fSyslog, *fTimeout)
+	if err != nil {
+		return nil, err
+	}
+	if tc, ok := c.(*net.TCPConn); ok {
+		_ = tc.SetNoDelay(true)
+		_ = tc.SetKeepAlive(true)
+		_ = tc.SetKeepAlivePeriod(30 * time.Second)
+	}
+	return c, nil
+}
+
+// sendTCP пишет newline-delimited syslog (как UDP-путь). При ошибке — reconnect и один retry.
+func sendTCP(conn *net.Conn, payload []byte) bool {
+	writeAll := func(c net.Conn) error {
+		_ = c.SetWriteDeadline(time.Now().Add(*fTimeout))
+		_, err := c.Write(payload)
+		return err
+	}
+
+	if *conn == nil {
+		c, err := dialSyslogTCP()
+		if err != nil {
+			return false
+		}
+		*conn = c
+	}
+	if err := writeAll(*conn); err != nil {
+		_ = (*conn).Close()
+		*conn = nil
+		c, err2 := dialSyslogTCP()
+		if err2 != nil {
+			return false
+		}
+		*conn = c
+		if err := writeAll(*conn); err != nil {
+			_ = (*conn).Close()
+			*conn = nil
+			return false
+		}
+	}
+	return true
+}
+
 func worker(ctx context.Context, id int, jobs <-chan struct{}, wg *sync.WaitGroup,
 	client *http.Client, udp net.Conn, mix []weighted, cor *corpus) {
 	defer wg.Done()
 
-		g := newGen(int64(id)*7919+1, *fHotIPs, *fTotalIPs, *fZipfS, *fDirty, mix, cor, *fGeoMode)
+	g := newGen(int64(id)*7919+1, *fHotIPs, *fTotalIPs, *fZipfS, *fDirty, mix, cor, *fGeoMode)
 	buf := &bytes.Buffer{}
+	var tcpConn net.Conn
+	if *fMode == "tcp" {
+		defer func() {
+			if tcpConn != nil {
+				_ = tcpConn.Close()
+			}
+		}()
+	}
 
 	for range jobs {
 		buf.Reset()
@@ -243,8 +316,9 @@ func worker(ctx context.Context, id int, jobs <-chan struct{}, wg *sync.WaitGrou
 		atomic.AddInt64(&cEvents, int64(*fBatch))
 		t0 := time.Now()
 
-		if udp != nil {
-			// syslog-путь: события шлём по одному
+		switch *fMode {
+		case "udp":
+			// syslog UDP: события по одному (MTU)
 			ok := true
 			for _, line := range bytes.Split(payload, []byte("\n")) {
 				if len(line) == 0 {
@@ -260,7 +334,13 @@ func worker(ctx context.Context, id int, jobs <-chan struct{}, wg *sync.WaitGrou
 			} else {
 				atomic.AddInt64(&cFail, 1)
 			}
-		} else {
+		case "tcp":
+			if sendTCP(&tcpConn, payload) {
+				atomic.AddInt64(&cOK, 1)
+			} else {
+				atomic.AddInt64(&cFail, 1)
+			}
+		default: // http
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, *fURL, bytes.NewReader(payload))
 			if err != nil {
 				atomic.AddInt64(&cFail, 1)
